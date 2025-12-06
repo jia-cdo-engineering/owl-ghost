@@ -1,25 +1,62 @@
-// device-auth.ts
+import { v4 as uuidv4 } from 'uuid';
 
-// This module provides device identity and cryptographic functions for device-based authentication.
+export class DeviceAuth {
+  private publicKey: CryptoKey;
+  private privateKey: CryptoKey;
 
-// Function to generate a unique device identifier
-function generateDeviceId(): string {
-    return 'device-' + Math.random().toString(36).substr(2, 9);
+  constructor() {
+    this.generateKeyPair();
+  }
+
+  private async generateKeyPair() {
+    const keys = await window.crypto.subtle.generateKey(
+      {
+        name: "ECDSA",
+        namedCurve: "P-256"
+      },
+      true,
+      ["sign", "verify"]
+    );
+    this.publicKey = keys.publicKey;
+    this.privateKey = keys.privateKey;
+  }
+
+  public async signData(data: string): Promise<ArrayBuffer> {
+    const encoder = new TextEncoder();
+    const signature = await window.crypto.subtle.sign(
+      {
+        name: "ECDSA",
+      },
+      this.privateKey,
+      encoder.encode(data)
+    );
+    return signature;
+  }
+
+  public async verifySignature(data: string, signature: ArrayBuffer): Promise<boolean> {
+    const encoder = new TextEncoder();
+    return await window.crypto.subtle.verify(
+      {
+        name: "ECDSA",
+      },
+      this.publicKey,
+      signature,
+      encoder.encode(data)
+    );
+  }
+
+  public static generateDeviceId(): string {
+    return uuidv4();
+  }
 }
 
-// Function to encrypt data using a simple cryptographic algorithm
-function encrypt(data: string, key: string): string {
-    let encryptedData = '';  // Replace with actual encryption logic
-    // Example: Using a basic algorithm or library
-    return encryptedData;
-}
+// Example usage
+(async () => {
+  const deviceAuth = new DeviceAuth();
+  const deviceId = DeviceAuth.generateDeviceId();
+  const data = "Test data for signing";
 
-// Function to decrypt data
-function decrypt(encryptedData: string, key: string): string {
-    let originalData = ''; // Replace with actual decryption logic
-    // Example: Using a basic algorithm or library
-    return originalData;
-}
-
-// Expose the functions
-export { generateDeviceId, encrypt, decrypt };
+  const signature = await deviceAuth.signData(data);
+  const isValid = await deviceAuth.verifySignature(data, signature);
+  console.log(`Device ID: ${deviceId}, Signature Valid: ${isValid}`);
+})();
