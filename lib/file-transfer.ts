@@ -1,37 +1,46 @@
 // lib/file-transfer.ts
+import { pbkdf2, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 
-import crypto from 'crypto';
+const ALGORITHM = 'aes-256-gcm';
+const ITERATIONS = 100000;
+const SALT_LENGTH = 16;
+const KEY_LENGTH = 32;
+const IV_LENGTH = 12;
 
-// Function to generate a key for encryption
-const generateKey = (password: string): Buffer => {
-    return crypto.scryptSync(password, 'salt', 24);
+// Function for input validation
+const validateInputs = (data: string, password: string): boolean => {
+    if (!data || typeof data !== 'string') {
+        throw new Error('Invalid data: Must be a non-empty string');
+    }
+    if (!password || typeof password !== 'string') {
+        throw new Error('Invalid password: Must be a non-empty string');
+    }
+    return true;
 };
 
-// Function to encrypt data
-export const encrypt = (data: string, password: string): { iv: Buffer; encryptedData: Buffer } => {
-    const iv = crypto.randomBytes(16);
-    const key = generateKey(password);
-    const cipher = crypto.createCipheriv('aes-192-cbc', key, iv);
+// Encrypt function
+export const encrypt = (data: string, password: string): { salt: Buffer; iv: Buffer; encrypted: Buffer; tag: Buffer } => {
+    validateInputs(data, password);
 
-    const encryptedData = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
-    return { iv, encryptedData };
+    const salt = randomBytes(SALT_LENGTH);
+    const key = pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, 'sha256');
+    const iv = randomBytes(IV_LENGTH);
+    const cipher = createCipheriv(ALGORITHM, key, iv);
+
+    const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+
+    return { salt, iv, encrypted, tag };
 };
 
-// Function to decrypt data
-export const decrypt = (encryptedData: Buffer, iv: Buffer, password: string): string => {
-    const key = generateKey(password);
-    const decipher = crypto.createDecipheriv('aes-192-cbc', key, iv);
-    
-    const decryptedData = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
-    return decryptedData.toString();
+// Decrypt function
+export const decrypt = (salt: Buffer, iv: Buffer, encrypted: Buffer, tag: Buffer, password: string): string => {
+    validateInputs(encrypted.toString('utf8'), password);
+
+    const key = pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, 'sha256');
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(tag);
+
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return decrypted.toString('utf8');
 };
-
-// Example usage
-const password = 'your-secure-password';
-const originalData = 'This is confidential data.';
-
-const { iv, encryptedData } = encrypt(originalData, password);
-console.log('Encrypted:', encryptedData.toString('hex'));
-
-const decryptedData = decrypt(encryptedData, iv, password);
-console.log('Decrypted:', decryptedData);
